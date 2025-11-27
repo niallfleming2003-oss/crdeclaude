@@ -1,4 +1,4 @@
-﻿const PROJECT_ID = import.meta.env.VITE_GOOGLE_PROJECT_ID;
+const PROJECT_ID = import.meta.env.VITE_GOOGLE_PROJECT_ID;
 const VISION_API_URL = "http://localhost:4000/api/vision";
 
 export type OCRResult = {
@@ -10,6 +10,18 @@ export type OCRResult = {
   confidence: number;
 };
 
+type BoundingBox = {
+  vertices: Array<{ x: number; y: number }>;
+};
+
+type TextAnnotation = {
+  description: string;
+  boundingPoly: BoundingBox;
+};
+
+/**
+ * Extract scorecard data using FULL Vision API response with bounding boxes
+ */
 export async function extractScorecardData(
   imageUrl: string
 ): Promise<OCRResult> {
@@ -24,7 +36,7 @@ export async function extractScorecardData(
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ imageUrl }),
+    body: JSON.stringify({ imageUrl, includeAnnotations: true }),
   });
 
   const data = await response.json();
@@ -36,312 +48,70 @@ export async function extractScorecardData(
     throw new Error(`Vision API error: ${msg}`);
   }
 
+  // Get both text and structured annotations
   const fullText: string = data.text || "";
-  console.log("OCR raw text:", fullText);
+  const annotations: TextAnnotation[] = data.annotations || [];
 
-  return parseScorecard(fullText);
+  console.log("OCR received:", {
+    textLength: fullText.length,
+    annotationCount: annotations.length,
+  });
+
+  // Use spatial parsing if we have annotations, otherwise fall back to text parsing
+  if (annotations && annotations.length > 0) {
+    return parseScorecardWithBoundingBoxes(annotations, fullText);
+  } else {
+    console.warn("No bounding box data available, using fallback text parsing");
+    return parseScorecard(fullText);
+  }
 }
 
 /**
- * Parse OCR text for:
- * - Player names (handles "Name" on one line, name on following lines)
- * - Handicaps around "Hcap", "cap", or "15 Name"
- * - Hole count (usually 18)
- * - Possible gross scores (2–12) per hole
+ * IMPROVED: Parse scorecard using bounding box positions
  */
-function parseScorecard(text: string): OCRResult {
-  const cleaned = text.replace(/\r/g, "");
-
-  const lines = cleaned
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
-
-  // ---------- 1. Infer hole count ----------
-  function inferHoleCount(allLines: string[]): number {
-    let bestGuess = 18;
-
-    for (const line of allLines) {
-      const nums = line.match(/\b\d{1,2}\b/g);
-      if (!nums || nums.length < 6) continue;
-
-      const intNums = nums.map((n) => parseInt(n, 10)).filter((n) => !isNaN(n));
-      if (intNums.length < 6) continue;
-
-      const max = Math.max(...intNums);
-      if ([9, 13, 16, 18].includes(max)) {
-        return max;
-      }
-      if (max >= 9 && max <= 18) {
-        bestGuess = max;
-      }
-    }
-
-    return bestGuess;
-  }
-
-  const holeCount = inferHoleCount(lines);
-
-  // ---------- 2. Find players (names + handicaps) ----------
-
-  type ParsedPlayer = {
-    name: string;
-    handicap: number;
-    lineIndex: number;
+function parseScorecardWithBoundingBoxes(
+  annotations: TextAnnotation[],
+  fullText: string
+): OCRResult {
+  // Helper to get Y position (vertical) of a bounding box
+  const getY = (box: BoundingBox): number => {
+    const vertices = box.vertices;
+    return Math.min(...vertices.map((v) => v.y));
   };
 
-  const players: ParsedPlayer[] = [];
+  // Helper to get X position (horizontal) of a bounding box
+  const getX = (box: BoundingBox): number => {
+    const vertices = box.vertices;
+    return Math.min(...vertices.map((v) => v.x));
+  };
 
-  // Words that are layout, not part of a name
-  const layoutKeywords = [
-    "hole",
-    "yards",
-    "yard's",
-    "par",
-    "index",
-    "blue",
-    "white",
-    "green",
-    "pts",
-    "points",
-    "ladies",
-  ];
+  // Group annotations by vertical position (rows)
+  const rowGroups = groupByRows(annotations, 20); // 20px tolerance
 
-  const layoutRegex = new RegExp(
-    layoutKeywords.map((w) => "\\b" + w + "\\b").join("|"),
-    "i"
+  console.log(`Detected ${rowGroups.length} rows in scorecard`);
+
+  // Find player rows (contain names and handicaps)
+  const playerRows = findPlayerRows(rowGroups);
+  console.log(`Found ${playerRows.length} player rows`);
+
+  // Extract players
+  const players = playerRows.map((row) => extractPlayer(row));
+
+  // Detect hole count from header row
+  const holeCount = detectHoleCount(rowGroups);
+  console.log(`Detected hole count: ${holeCount}`);
+
+  // Extract scores for each player
+  const holeScores = players.map((player) =>
+    extractScoresFromRow(player.row, holeCount)
   );
-
-  // Clean a raw name string to something sensible
-  function cleanName(raw: string): string {
-    let out = raw;
-
-    // Cut off when we hit layout keywords
-    const m = out.match(layoutRegex);
-    if (m && m.index !== undefined) {
-      out = out.slice(0, m.index);
-    }
-
-    // Remove "NAME", "HCAP", "CAP", "HEAP" words if they got pulled in
-    out = out.replace(/\b(NAME|HCAP|Hcap|CAP|Cap|HEAP|Heap)\b/gi, "");
-
-    // Remove pure numbers that creep into the name (e.g. "SHEEDY 15 NAME")
-    out = out.replace(/\b\d{1,2}\b/g, "");
-
-    // Strip random junk at the end
-    out = out.replace(/[^A-Za-z.'\s]+$/g, "");
-
-    // Squash multiple spaces
-    out = out.replace(/\s+/g, " ").trim();
-
-    // Uppercase for consistency
-    out = out.toUpperCase();
-
-    // If we ended up with just "NAME" or empty, treat as no name
-    if (out === "NAME") return "";
-
-    return out;
-  }
-
-  // Find handicap near a name line, looking only FORWARD a few lines
-  function findHandicapNearLine(centerIndex: number): number {
-    const end = Math.min(lines.length - 1, centerIndex + 8);
-
-    // Pass 1: explicit Hcap / cap on the same or later lines
-    for (let i = centerIndex; i <= end; i++) {
-      const line = lines[i];
-
-      let m = line.match(/\bHcap\b[:\s]*([0-9]{1,2})/i);
-      if (m && m[1]) {
-        const n = parseInt(m[1], 10);
-        if (!isNaN(n)) return n;
-      }
-
-      m = line.match(/([0-9]{1,2})\s*\bHcap\b/i);
-      if (m && m[1]) {
-        const n = parseInt(m[1], 10);
-        if (!isNaN(n)) return n;
-      }
-
-      m = line.match(/\b[cC]ap\b[:\s]*([0-9]{1,2})/);
-      if (m && m[1]) {
-        const n = parseInt(m[1], 10);
-        if (!isNaN(n)) return n;
-      }
-    }
-
-    // Pass 2: number just above or below an Hcap/Cap line (within this forward window)
-    for (let i = centerIndex; i <= end; i++) {
-      const line = lines[i];
-      if (!/\bHcap\b/i.test(line) && !/\b[cC]ap\b/i.test(line)) continue;
-
-      const prev = lines[i - 1] || "";
-      const next = lines[i + 1] || "";
-
-      let m = prev.match(/\b([0-9]{1,2})\b/);
-      if (m && m[1]) {
-        const n = parseInt(m[1], 10);
-        if (!isNaN(n)) return n;
-      }
-
-      m = next.match(/\b([0-9]{1,2})\b/);
-      if (m && m[1]) {
-        const n = parseInt(m[1], 10);
-        if (!isNaN(n)) return n;
-      }
-    }
-
-    // Pass 3: "15 Name" within this forward window
-    for (let i = centerIndex; i <= end; i++) {
-      const line = lines[i];
-      const m = line.match(/\b([0-9]{1,2})\s+Name\b/i);
-      if (m && m[1]) {
-        const n = parseInt(m[1], 10);
-        if (!isNaN(n)) return n;
-      }
-    }
-
-    return 0;
-  }
-
-  // Scan for "Name" markers and collect the actual player name lines
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    if (!/\bName\b/i.test(line)) continue;
-
-    // Case 1: "15 Name J.MU CONNOR" or "Name J.MU CONNOR"
-    const inlineMatch = line.match(/^(?:(\d{1,2})\s+)?Name\b\s*(.*)$/i);
-    let rawHandicap: number | null = null;
-    const nameParts: string[] = [];
-
-    if (inlineMatch) {
-      const handicapStr = inlineMatch[1];
-      const inlineName = inlineMatch[2] || "";
-
-      if (handicapStr) {
-        const n = parseInt(handicapStr, 10);
-        if (!isNaN(n)) rawHandicap = n;
-      }
-
-      if (inlineName && inlineName.length > 0) {
-        nameParts.push(inlineName);
-      }
-    }
-
-    // Case 2: line basically just "Name" and the actual name is below it
-    if (nameParts.length === 0) {
-      // Look at the next few lines to build a name
-      for (let j = i + 1; j < Math.min(lines.length, i + 5); j++) {
-        const nextLine = lines[j];
-        if (!nextLine) continue;
-
-        // Skip pure single letter / number like "A" / "B" / "2"
-        if (/^[A-Z0-9]$/.test(nextLine)) continue;
-
-        // Skip pure Hcap/Heap/Cap lines
-        if (/^(Hcap|Heap|Cap|cap)$/i.test(nextLine)) continue;
-
-        // If the line looks like layout (Hole / Yards / Par / Index etc), stop
-        if (layoutRegex.test(nextLine)) break;
-
-        nameParts.push(nextLine);
-      }
-    }
-
-    const rawName = cleanName(nameParts.join(" "));
-    if (!rawName || rawName.length < 2) continue;
-
-    // Avoid duplicates
-    if (players.some((p) => p.name === rawName)) continue;
-
-    const handicap =
-      rawHandicap !== null ? rawHandicap : findHandicapNearLine(i);
-
-    players.push({
-      name: rawName,
-      handicap,
-      lineIndex: i,
-    });
-  }
-
-  console.log("Parsed players from OCR (names + handicaps):", players);
-
-  // No players? Bail with low confidence
-  if (players.length === 0) {
-    return {
-      playerNames: [],
-      playerHandicaps: [],
-      holeScores: [],
-      detectedHoleCount: 0,
-      teamName: generateTeamName(),
-      confidence: 0.2,
-    };
-  }
 
   const playerNames = players.map((p) => p.name);
   const playerHandicaps = players.map((p) => p.handicap);
 
-  // ---------- 3. Extract possible hole scores for each player ----------
-
-  function extractScoresForPlayer(
-    allLines: string[],
-    startIndex: number,
-    endIndex: number,
-    targetHoles: number
-  ): number[] {
-    const scores: number[] = [];
-
-    for (let i = startIndex + 1; i < endIndex && scores.length < targetHoles; i++) {
-      const line = allLines[i];
-
-      // Skip obvious non-score lines
-      if (/\bName\b/i.test(line)) continue;
-      if (/\bPar\b/i.test(line)) continue;
-      if (/\bIndex\b/i.test(line)) continue;
-      if (/\bTotal\b/i.test(line)) continue;
-      if (/\bPoints?\b/i.test(line)) continue;
-      if (/\bHcap\b/i.test(line)) continue;
-      if (/\bHeap\b/i.test(line)) continue;
-
-      const nums = line.match(/\b\d{1,2}\b/g);
-      if (!nums) continue;
-
-      for (const token of nums) {
-        const n = parseInt(token, 10);
-        if (isNaN(n)) continue;
-
-        // Typical gross score range
-        if (n < 2 || n > 12) continue;
-
-        scores.push(n);
-        if (scores.length >= targetHoles) break;
-      }
-    }
-
-    while (scores.length < targetHoles) scores.push(0);
-    if (scores.length > targetHoles) scores.length = targetHoles;
-
-    return scores;
-  }
-
-  const holeScores: number[][] = [];
-
-  players.forEach((player, idx) => {
-    const thisStart = player.lineIndex;
-    const nextPlayer = players[idx + 1];
-    const thisEnd = nextPlayer ? nextPlayer.lineIndex : lines.length;
-
-    const scores = extractScoresForPlayer(lines, thisStart, thisEnd, holeCount);
-    holeScores.push(scores);
-  });
-
-  // ---------- 4. Confidence estimate ----------
-
-  const hasAnyRealScores = holeScores.some((row) => row.some((s) => s > 0));
-  const base =
-    players.length >= 3 ? 0.5 : players.length === 2 ? 0.45 : 0.4;
-  const confidence = hasAnyRealScores ? base + 0.2 : base;
+  const hasRealScores = holeScores.some((row) => row.some((s) => s > 0));
+  const confidence =
+    playerNames.length >= 3 && hasRealScores ? 0.8 : playerNames.length >= 2 ? 0.6 : 0.4;
 
   return {
     playerNames,
@@ -354,44 +124,239 @@ function parseScorecard(text: string): OCRResult {
 }
 
 /**
- * Friendly Irish county team name
+ * Group text annotations by vertical position (same Y = same row)
  */
+function groupByRows(
+  annotations: TextAnnotation[],
+  tolerance: number
+): TextAnnotation[][] {
+  const sorted = [...annotations].sort((a, b) => {
+    const yA = Math.min(...a.boundingPoly.vertices.map((v) => v.y));
+    const yB = Math.min(...b.boundingPoly.vertices.map((v) => v.y));
+    return yA - yB;
+  });
+
+  const rows: TextAnnotation[][] = [];
+  let currentRow: TextAnnotation[] = [];
+  let lastY = -1000;
+
+  for (const ann of sorted) {
+    const y = Math.min(...ann.boundingPoly.vertices.map((v) => v.y));
+
+    if (lastY === -1000 || Math.abs(y - lastY) <= tolerance) {
+      currentRow.push(ann);
+      lastY = y;
+    } else {
+      if (currentRow.length > 0) {
+        rows.push(currentRow);
+      }
+      currentRow = [ann];
+      lastY = y;
+    }
+  }
+
+  if (currentRow.length > 0) {
+    rows.push(currentRow);
+  }
+
+  return rows;
+}
+
+/**
+ * Find rows that likely contain player information
+ */
+function findPlayerRows(rows: TextAnnotation[][]): TextAnnotation[][] {
+  const playerRows: TextAnnotation[][] = [];
+
+  for (const row of rows) {
+    const text = row.map((a) => a.description).join(" ");
+
+    // Skip header rows
+    if (/\b(hole|par|index|yard)/i.test(text)) continue;
+
+    // Look for rows with names (letters) and numbers (handicaps/scores)
+    const hasLetters = /[A-Za-z]{2,}/.test(text);
+    const hasNumbers = /\d+/.test(text);
+
+    // Look for explicit name indicators
+    const hasNameMarker = /\bname\b/i.test(text);
+
+    // Must have letters (for names) or explicit name marker
+    if (hasLetters || hasNameMarker) {
+      playerRows.push(row);
+    }
+  }
+
+  return playerRows;
+}
+
+/**
+ * Extract player name and handicap from a row
+ */
+function extractPlayer(row: TextAnnotation[]): {
+  name: string;
+  handicap: number;
+  row: TextAnnotation[];
+} {
+  const tokens = row
+    .map((a) => ({
+      text: a.description,
+      x: Math.min(...a.boundingPoly.vertices.map((v) => v.x)),
+    }))
+    .sort((a, b) => a.x - b.x); // Sort left to right
+
+  let name = "";
+  let handicap = 0;
+
+  // Strategy 1: Find "Name" keyword, then grab following text
+  const nameIdx = tokens.findIndex((t) => /^name$/i.test(t.text));
+  if (nameIdx >= 0) {
+    // Take words after "Name" that are letters (not numbers)
+    const nameParts = tokens
+      .slice(nameIdx + 1)
+      .filter((t) => /^[A-Za-z.'\s]+$/.test(t.text))
+      .map((t) => t.text);
+    name = nameParts.slice(0, 3).join(" "); // Take up to 3 words
+  } else {
+    // Strategy 2: Take first alphabetic tokens as name
+    const nameParts = tokens
+      .filter((t) => /^[A-Za-z.'\s]+$/.test(t.text) && t.text.length > 1)
+      .map((t) => t.text);
+    name = nameParts.slice(0, 3).join(" ");
+  }
+
+  // Find handicap: look for "Hcap" or "Cap" followed by number
+  const hcapIdx = tokens.findIndex((t) => /^(hcap|cap)$/i.test(t.text));
+  if (hcapIdx >= 0 && hcapIdx < tokens.length - 1) {
+    const nextToken = tokens[hcapIdx + 1].text;
+    const num = parseInt(nextToken, 10);
+    if (!isNaN(num) && num >= 0 && num <= 54) {
+      handicap = num;
+    }
+  } else {
+    // Look for standalone numbers in reasonable handicap range (0-36)
+    const hcapCandidate = tokens.find((t) => {
+      const num = parseInt(t.text, 10);
+      return !isNaN(num) && num >= 0 && num <= 36;
+    });
+    if (hcapCandidate) {
+      handicap = parseInt(hcapCandidate.text, 10);
+    }
+  }
+
+  // Clean up name
+  name = name
+    .replace(/\b(name|hcap|cap|heap)\b/gi, "")
+    .replace(/\d+/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+
+  return { name: name || "PLAYER", handicap, row };
+}
+
+/**
+ * Detect hole count from scorecard (9, 13, 16, or 18)
+ */
+function detectHoleCount(rows: TextAnnotation[][]): number {
+  // Look for a row with sequential numbers 1-18 or 1-9
+  for (const row of rows) {
+    const numbers = row
+      .map((a) => parseInt(a.description, 10))
+      .filter((n) => !isNaN(n) && n >= 1 && n <= 18);
+
+    if (numbers.length >= 6) {
+      const max = Math.max(...numbers);
+      if ([9, 13, 16, 18].includes(max)) return max;
+      if (max >= 9 && max <= 18) return max;
+    }
+  }
+
+  return 18; // Default
+}
+
+/**
+ * Extract hole scores from a player row
+ */
+function extractScoresFromRow(
+  row: TextAnnotation[],
+  holeCount: number
+): number[] {
+  // Get all numbers from the row that could be scores (2-12)
+  const scores = row
+    .map((a) => parseInt(a.description, 10))
+    .filter((n) => !isNaN(n) && n >= 2 && n <= 12);
+
+  // Pad or trim to match hole count
+  while (scores.length < holeCount) scores.push(0);
+  return scores.slice(0, holeCount);
+}
+
+/**
+ * FALLBACK: Original text-based parsing for when no bounding boxes available
+ */
+function parseScorecard(text: string): OCRResult {
+  const cleaned = text.replace(/\r/g, "");
+  const lines = cleaned
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+
+  // Simplified version of your original logic
+  const players: { name: string; handicap: number }[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!/\bName\b/i.test(line)) continue;
+
+    // Extract name from next few lines
+    const nameParts = [];
+    for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+      const next = lines[j];
+      if (/^[A-Za-z.\s]{2,}$/.test(next)) {
+        nameParts.push(next);
+      } else {
+        break;
+      }
+    }
+
+    const name = nameParts.join(" ").toUpperCase() || "PLAYER";
+
+    // Look for handicap
+    let handicap = 0;
+    for (let j = i; j < Math.min(i + 5, lines.length); j++) {
+      const m = lines[j].match(/\b(\d{1,2})\s*(hcap|cap)\b/i);
+      if (m) {
+        handicap = parseInt(m[1], 10);
+        break;
+      }
+    }
+
+    players.push({ name, handicap });
+  }
+
+  const holeCount = 18;
+  const holeScores = players.map(() => Array(holeCount).fill(0));
+
+  return {
+    playerNames: players.map((p) => p.name),
+    playerHandicaps: players.map((p) => p.handicap),
+    holeScores,
+    detectedHoleCount: holeCount,
+    teamName: generateTeamName(),
+    confidence: players.length > 0 ? 0.4 : 0.2,
+  };
+}
+
 function generateTeamName(): string {
   const counties = [
-    "ANTRIM",
-    "ARMAGH",
-    "CARLOW",
-    "CAVAN",
-    "CLARE",
-    "CORK",
-    "DERRY",
-    "DONEGAL",
-    "DOWN",
-    "DUBLIN",
-    "FERMANAGH",
-    "GALWAY",
-    "KERRY",
-    "KILDARE",
-    "KILKENNY",
-    "LAOIS",
-    "LEITRIM",
-    "LIMERICK",
-    "LONGFORD",
-    "LOUTH",
-    "MAYO",
-    "MEATH",
-    "MONAGHAN",
-    "OFFALY",
-    "ROSCOMMON",
-    "SLIGO",
-    "TIPPERARY",
-    "TYRONE",
-    "WATERFORD",
-    "WESTMEATH",
-    "WEXFORD",
-    "WICKLOW",
+    "ANTRIM", "ARMAGH", "CARLOW", "CAVAN", "CLARE", "CORK",
+    "DERRY", "DONEGAL", "DOWN", "DUBLIN", "FERMANAGH", "GALWAY",
+    "KERRY", "KILDARE", "KILKENNY", "LAOIS", "LEITRIM", "LIMERICK",
+    "LONGFORD", "LOUTH", "MAYO", "MEATH", "MONAGHAN", "OFFALY",
+    "ROSCOMMON", "SLIGO", "TIPPERARY", "TYRONE", "WATERFORD",
+    "WESTMEATH", "WEXFORD", "WICKLOW",
   ];
-
   const index = Math.floor(Date.now() % counties.length);
   return counties[index];
 }

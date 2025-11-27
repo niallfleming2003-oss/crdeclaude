@@ -1,10 +1,7 @@
 {
   "ExpandedNodes": [
     "",
-    "\\src",
-    "\\src\\database",
-    "\\src\\lib"
+    "\\src"
   ],
-  "SelectedNode": "\\src\\lib\\ocr.ts",
   "PreviewInSolutionExplorer": false
 }

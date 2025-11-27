@@ -3,24 +3,8 @@
   "WorkspaceRootPath": "C:\\Users\\pc\\Desktop\\cairde10\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\pc\\Desktop\\cairde10\\src\\lib\\ocr.ts||{3B902123-F8A7-4915-9F01-361F908088D0}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\lib\\ocr.ts||{3B902123-F8A7-4915-9F01-361F908088D0}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\pc\\Desktop\\cairde10\\src\\App.tsx||{3B902123-F8A7-4915-9F01-361F908088D0}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\App.tsx||{3B902123-F8A7-4915-9F01-361F908088D0}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\pc\\Desktop\\cairde10\\src\\components\\OrganizerUpload.tsx||{3B902123-F8A7-4915-9F01-361F908088D0}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\components\\OrganizerUpload.tsx||{3B902123-F8A7-4915-9F01-361F908088D0}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\pc\\Desktop\\cairde10\\src\\lib\\uploadHandler.ts||{3B902123-F8A7-4915-9F01-361F908088D0}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\lib\\uploadHandler.ts||{3B902123-F8A7-4915-9F01-361F908088D0}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\pc\\Desktop\\cairde10\\src\\lib\\storage.ts||{3B902123-F8A7-4915-9F01-361F908088D0}",
-      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\lib\\storage.ts||{3B902123-F8A7-4915-9F01-361F908088D0}"
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\pc\\Desktop\\cairde10\\vision-proxy.cjs||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:vision-proxy.cjs||{8B382828-6202-11D1-8870-0000F87579D2}"
     }
   ],
   "DocumentGroupContainers": [
@@ -30,67 +14,19 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 4,
+          "SelectedChildIndex": 0,
           "Children": [
             {
               "$type": "Document",
-              "DocumentIndex": 1,
-              "Title": "App.tsx",
-              "DocumentMoniker": "C:\\Users\\pc\\Desktop\\cairde10\\src\\App.tsx",
-              "RelativeDocumentMoniker": "src\\App.tsx",
-              "ToolTip": "C:\\Users\\pc\\Desktop\\cairde10\\src\\App.tsx",
-              "RelativeToolTip": "src\\App.tsx",
-              "ViewState": "AgIAALUBAAAAAAAAAAAUwLYBAAANAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2025-11-27T05:32:40.253Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 2,
-              "Title": "OrganizerUpload.tsx",
-              "DocumentMoniker": "C:\\Users\\pc\\Desktop\\cairde10\\src\\components\\OrganizerUpload.tsx",
-              "RelativeDocumentMoniker": "src\\components\\OrganizerUpload.tsx",
-              "ToolTip": "C:\\Users\\pc\\Desktop\\cairde10\\src\\components\\OrganizerUpload.tsx",
-              "RelativeToolTip": "src\\components\\OrganizerUpload.tsx",
-              "ViewState": "AgIAAA4BAAAAAAAAAAAAABMBAAABAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2025-11-27T04:59:08.058Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 3,
-              "Title": "uploadHandler.ts",
-              "DocumentMoniker": "C:\\Users\\pc\\Desktop\\cairde10\\src\\lib\\uploadHandler.ts",
-              "RelativeDocumentMoniker": "src\\lib\\uploadHandler.ts",
-              "ToolTip": "C:\\Users\\pc\\Desktop\\cairde10\\src\\lib\\uploadHandler.ts",
-              "RelativeToolTip": "src\\lib\\uploadHandler.ts",
-              "ViewState": "AgIAAGMAAAAAAAAAAAAkwHQAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2025-11-27T00:57:32.944Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 4,
-              "Title": "storage.ts",
-              "DocumentMoniker": "C:\\Users\\pc\\Desktop\\cairde10\\src\\lib\\storage.ts",
-              "RelativeDocumentMoniker": "src\\lib\\storage.ts",
-              "ToolTip": "C:\\Users\\pc\\Desktop\\cairde10\\src\\lib\\storage.ts",
-              "RelativeToolTip": "src\\lib\\storage.ts",
-              "ViewState": "AgIAADgAAAAAAAAAAAAkwEkAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2025-11-27T04:08:09.218Z"
-            },
-            {
-              "$type": "Document",
               "DocumentIndex": 0,
-              "Title": "ocr.ts",
-              "DocumentMoniker": "C:\\Users\\pc\\Desktop\\cairde10\\src\\lib\\ocr.ts",
-              "RelativeDocumentMoniker": "src\\lib\\ocr.ts",
-              "ToolTip": "C:\\Users\\pc\\Desktop\\cairde10\\src\\lib\\ocr.ts",
-              "RelativeToolTip": "src\\lib\\ocr.ts",
-              "ViewState": "AgIAAHEBAAAAAAAAAAAAAI0BAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003213|",
-              "WhenOpened": "2025-11-26T06:49:22.922Z",
+              "Title": "vision-proxy.cjs",
+              "DocumentMoniker": "C:\\Users\\pc\\Desktop\\cairde10\\vision-proxy.cjs",
+              "RelativeDocumentMoniker": "vision-proxy.cjs",
+              "ToolTip": "C:\\Users\\pc\\Desktop\\cairde10\\vision-proxy.cjs",
+              "RelativeToolTip": "vision-proxy.cjs",
+              "ViewState": "AgIAAEUAAAAAAAAAAAAmwFYAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001646|",
+              "WhenOpened": "2025-11-27T16:40:24.125Z",
               "EditorCaption": ""
             }
           ]
