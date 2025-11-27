@@ -1,0 +1,175 @@
+/**
+ * Google Cloud Vision OCR integration for extracting scorecard data
+ *
+ * This file calls your local Vision proxy (http://localhost:4000/api/vision)
+ * and then parses the returned OCR text into a simple scorecard structure.
+ */
+
+const PROJECT_ID = import.meta.env.VITE_GOOGLE_PROJECT_ID;
+const VISION_API_URL = "http://localhost:4000/api/vision";
+
+export type OCRResult = {
+  playerNames: string[];
+  playerHandicaps: number[];
+  holeScores: number[][];
+  detectedHoleCount: number;
+  teamName?: string;
+  confidence: number;
+};
+
+/**
+ * Call the local Vision proxy to OCR a scorecard image.
+ * imageUrl will be a gs:// URL from your bucket.
+ */
+export async function extractScorecardData(
+  imageUrl: string
+): Promise<OCRResult> {
+  if (!PROJECT_ID) {
+    throw new Error("Missing VITE_GOOGLE_PROJECT_ID environment variable");
+  }
+
+  // Log so we can see what's going on
+  console.log("Sending image to OCR:", imageUrl);
+
+  const response = await fetch(VISION_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ imageUrl }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || !data.ok) {
+    const msg = data?.error || response.statusText || "Unknown Vision API error";
+    console.error("Vision proxy error:", data);
+    throw new Error(`Vision API error: ${msg}`);
+  }
+
+  const fullText: string = data.text || "";
+  console.log("OCR raw text:", fullText);
+
+  return parseScorecard(fullText);
+}
+
+/**
+ * Very simple parser for the OCR text.
+ * If it can't confidently detect real data,
+ * it returns an empty structure instead of fake scores.
+ */
+function parseScorecard(text: string): OCRResult {
+  const lines = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+
+  const playerNames: string[] = [];
+  const playerHandicaps: number[] = [];
+  const holeScores: number[][] = [];
+
+  // Try to detect players and scores using a simple pattern like:
+  // "Name HCP 8 4 5 3 4 5 4 3 ..."
+  const playerLineRegex =
+    /^([A-Za-z][A-Za-z\s'.-]{1,30})\s+(?:HCP|HC|Handicap)[:\s]+(\d{1,2})\s+((?:\d+\s+){2,}\d+)/i;
+
+  for (const line of lines) {
+    const match = line.match(playerLineRegex);
+    if (!match) continue;
+
+    const name = match[1].trim();
+    const handicap = parseInt(match[2], 10);
+    const scoresPart = match[3].trim();
+
+    const scores = scoresPart
+      .split(/\s+/)
+      .map((s) => parseInt(s, 10))
+      .filter((n) => !isNaN(n));
+
+    if (!name || isNaN(handicap) || scores.length === 0) continue;
+
+    playerNames.push(name);
+    playerHandicaps.push(handicap);
+    holeScores.push(scores);
+  }
+
+  let detectedHoleCount = 0;
+  if (holeScores.length > 0) {
+    detectedHoleCount = Math.max(...holeScores.map((s) => s.length));
+
+    // Normalise lengths (pad with 0 for missing scores)
+    for (let i = 0; i < holeScores.length; i++) {
+      const row = holeScores[i];
+      while (row.length < detectedHoleCount) {
+        row.push(0);
+      }
+      holeScores[i] = row.slice(0, detectedHoleCount);
+    }
+  }
+
+  // If we couldn't detect anything, return an "empty but valid" result.
+  // Your UI can detect confidence < 0.5 and show "Needs manual entry".
+  if (playerNames.length === 0 || holeScores.length === 0) {
+    return {
+      playerNames: [],
+      playerHandicaps: [],
+      holeScores: [],
+      detectedHoleCount: 0,
+      teamName: generateTeamName(),
+      confidence: 0.2,
+    };
+  }
+
+  return {
+    playerNames,
+    playerHandicaps,
+    holeScores,
+    detectedHoleCount,
+    teamName: generateTeamName(),
+    confidence: 0.8,
+  };
+}
+
+/**
+ * Generate a friendly team name from Irish counties
+ * (just for fun / uniqueness)
+ */
+function generateTeamName(): string {
+  const counties = [
+    "Antrim",
+    "Armagh",
+    "Carlow",
+    "Cavan",
+    "Clare",
+    "Cork",
+    "Derry",
+    "Donegal",
+    "Down",
+    "Dublin",
+    "Fermanagh",
+    "Galway",
+    "Kerry",
+    "Kildare",
+    "Kilkenny",
+    "Laois",
+    "Leitrim",
+    "Limerick",
+    "Longford",
+    "Louth",
+    "Mayo",
+    "Meath",
+    "Monaghan",
+    "Offaly",
+    "Roscommon",
+    "Sligo",
+    "Tipperary",
+    "Tyrone",
+    "Waterford",
+    "Westmeath",
+    "Wexford",
+    "Wicklow",
+  ];
+
+  const index = Math.floor(Date.now() % counties.length);
+  return counties[index];
+}
