@@ -1,0 +1,19 @@
+# Visual Studio cache
+.vs/
+
+# Build output
+bin/
+obj/
+
+# Visual Studio solution files (if present)
+*.sln
+*.slnx
+*.vcxproj.user
+*.csproj.user
+
+# Logs
+*.log
+
+# OS junk
+Thumbs.db
+Desktop.ini
